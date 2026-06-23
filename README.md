@@ -118,7 +118,7 @@ Please follow the repository's code style and add tests for new functionality. F
 
 ## License
 
-This repository does not include a license file. Add a LICENSE file (for example, MIT or Apache-2.0) to clarify permitted usage.
+This repository does not include a license file.
 
 
 ## Contact & acknowledgements
