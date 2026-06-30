@@ -1,0 +1,52 @@
+.toolbar {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  padding: 15px;
+  background: #2a2a2a;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn svg {
+  margin-right: 5px;
+}
+
+.btn-primary {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #3e8e41;
+}
+
+.btn-control {
+  background: #2196F3;
+  color: white;
+}
+
+.btn-control:hover {
+  background: #0b7dda;
+}
+
+.btn-export {
+  background: #ff9800;
+  color: white;
+}
+
+.btn-export:hover {
+  background: #e68a00;
+}

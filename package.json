@@ -10,7 +10,7 @@
     "start": "electron .",
     "electron:dev": "node build-preload.js && cross-env NODE_ENV=development electron .",
     "no-browser": "node no-browser.js",
-    "dev:electron": "cross-env BROWSER=none VITE_OPEN_BROWSER=false concurrently --kill-others \"vite --no-open\" \"wait-on --timeout 60000 http://localhost:5173 && npm run electron:dev\""
+    "dev:electron": "concurrently --kill-others \"vite build --mode development --watch\" \"wait-on --timeout 60000 dist/renderer/index.html && npm run electron:dev\""
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

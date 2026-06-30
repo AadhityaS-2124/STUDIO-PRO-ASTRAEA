@@ -16,6 +16,7 @@ export interface ClipProperties {
   color?: string;
   x?: number;
   y?: number;
+  scale?: number;
   width?: number;
   height?: number;
   opacity?: number;
@@ -26,6 +27,8 @@ export interface ClipProperties {
   transitionDuration?: number;
   keyframes?: Keyframe[];
   proxyPath?: string;
+  codec?: string;
+  audioCodec?: string;
 }
 
 export interface Clip {
@@ -42,7 +45,7 @@ export interface Clip {
 
 export interface Track {
   id: string;
-  type: 'video' | 'audio' | 'text';
+  type: 'video' | 'audio' | 'text' | 'image';
   name: string;
   isMuted?: boolean;
   isHidden?: boolean;
@@ -53,6 +56,7 @@ interface TimelineState {
   tracks: Track[];
   duration: number;
   selectedClipId: string | null;
+  selectedClipIds: string[];
   zoom: number;
   isPlaying: boolean;
   isLooping: boolean;
@@ -63,6 +67,8 @@ interface TimelineState {
   updateClip: (id: string, updates: Partial<Clip>) => void;
   updateClipPosition: (id: string, newStart: number, newTrackId?: string) => void;
   removeClip: (id: string) => void;
+  removeClips: (ids: string[]) => void;
+  selectAllClips: () => void;
   splitClip: (id: string, splitPoint: number) => string | null;
   duplicateClip: (id: string) => string | null;
   rippleTrimClip: (id: string, newDuration: number) => void;
@@ -88,20 +94,18 @@ interface TimelineState {
   undo: () => void;
   redo: () => void;
   saveHistory: () => void;
+  isTransactionActive: boolean;
+  startTransaction: () => void;
+  endTransaction: () => void;
 }
 
-const DEMO_VIDEO_URL = 'https://cdn.plyr.io/static/demo/View_From_A_Blue_Moon_Trailer-576p.mp4';
 const initialTracks: Track[] = [
   { id: 'video-1', type: 'video', name: 'Video 1' },
   { id: 'image-1', type: 'image', name: 'Image Overlay' },
   { id: 'audio-1', type: 'audio', name: 'Audio 1' },
   { id: 'text-1', type: 'text', name: 'Text Overlay' }
 ];
-const initialClips: Clip[] = [{
-  id: 'demo-clip', trackId: 'video-1', type: 'video', start: 0, duration: 30,
-  offset: 0, path: DEMO_VIDEO_URL, name: 'Demo Video',
-  properties: { brightness: 0, contrast: 1, saturation: 1, opacity: 1, transition: 'none', transitionDuration: 0.5, keyframes: [] }
-}];
+const initialClips: Clip[] = [];
 
 const nextId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const projectEnd = (clips: Clip[]) => Math.max(1, ...clips.map(c => c.start + c.duration));
@@ -112,6 +116,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   tracks: initialTracks,
   duration: projectEnd(initialClips),
   selectedClipId: null,
+  selectedClipIds: [],
   zoom: 1,
   isPlaying: false,
   isLooping: false,
@@ -120,27 +125,53 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   clipboardClip: null,
   past: [],
   future: [],
+  isTransactionActive: false,
 
-  saveHistory: () => set(state => ({
-    past: [...state.past, { clips: state.clips, tracks: state.tracks, duration: state.duration }].slice(-50),
-    future: []
-  })),
+  startTransaction: () => {
+    const { clips, tracks, duration } = get();
+    set(state => ({
+      past: [...state.past, structuredClone({ clips, tracks, duration })].slice(-50),
+      future: [],
+      isTransactionActive: true
+    }));
+  },
+
+  endTransaction: () => {
+    set({ isTransactionActive: false });
+  },
+
+  saveHistory: () => {
+    const { clips, tracks, duration, isTransactionActive } = get();
+    if (isTransactionActive) return;
+    set(state => ({
+      past: [...state.past, structuredClone({ clips, tracks, duration })].slice(-50),
+      future: []
+    }));
+  },
   undo: () => set(state => {
     if (state.past.length === 0) return state;
     const previous = state.past[state.past.length - 1];
     return {
       past: state.past.slice(0, -1),
-      future: [{ clips: state.clips, tracks: state.tracks, duration: state.duration }, ...state.future],
-      clips: previous.clips, tracks: previous.tracks, duration: previous.duration, selectedClipId: null
+      future: [structuredClone({ clips: state.clips, tracks: state.tracks, duration: state.duration }), ...state.future],
+      clips: structuredClone(previous.clips),
+      tracks: structuredClone(previous.tracks),
+      duration: previous.duration,
+      selectedClipId: null,
+      selectedClipIds: []
     };
   }),
   redo: () => set(state => {
     if (state.future.length === 0) return state;
     const next = state.future[0];
     return {
-      past: [...state.past, { clips: state.clips, tracks: state.tracks, duration: state.duration }],
+      past: [...state.past, structuredClone({ clips: state.clips, tracks: state.tracks, duration: state.duration })],
       future: state.future.slice(1),
-      clips: next.clips, tracks: next.tracks, duration: next.duration, selectedClipId: null
+      clips: structuredClone(next.clips),
+      tracks: structuredClone(next.tracks),
+      duration: next.duration,
+      selectedClipId: null,
+      selectedClipIds: []
     };
   }),
 
@@ -149,7 +180,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     tracks: loadedState.tracks || [],
     duration: loadedState.duration || 10,
     selectedClipId: null,
-    clipboardClip: null
+    selectedClipIds: [],
+    clipboardClip: null,
+    past: [],
+    future: [],
+    isTransactionActive: false
   }),
 
   addTrack: (type) => {
@@ -186,7 +221,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
   removeClip: (id) => {
     get().saveHistory();
-    set(state => ({ ...withDuration(state.clips.filter(c => c.id !== id)), selectedClipId: state.selectedClipId === id ? null : state.selectedClipId }));
+    set(state => ({ ...withDuration(state.clips.filter(c => c.id !== id)), selectedClipId: state.selectedClipId === id ? null : state.selectedClipId, selectedClipIds: state.selectedClipIds.filter(cid => cid !== id) }));
+  },
+  removeClips: (ids) => {
+    get().saveHistory();
+    set(state => ({ ...withDuration(state.clips.filter(c => !ids.includes(c.id))), selectedClipId: null, selectedClipIds: [] }));
+  },
+  selectAllClips: () => {
+    set(state => ({ selectedClipIds: state.clips.map(c => c.id), selectedClipId: state.clips[0]?.id || null }));
   },
   splitClip: (id, splitPoint) => {
     const clip = get().clips.find(c => c.id === id);
@@ -201,7 +243,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     if (!clip) return null;
     const { id: _id, ...copy } = clip;
     const newId = get().addClip({ ...copy, start: clip.start + clip.duration, properties: { ...clip.properties, keyframes: clip.properties?.keyframes?.map(k => ({ ...k, id: nextId() })) } });
-    set({ selectedClipId: newId });
+    set({ selectedClipId: newId, selectedClipIds: [newId] });
     return newId;
   },
   rippleTrimClip: (id, newDuration) => {
@@ -235,13 +277,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     get().saveHistory();
     set(state => ({ clips: state.clips.map(c => c.id === clipId ? { ...c, properties: { ...c.properties, keyframes: [...(c.properties?.keyframes ?? []), { ...keyframe, id: nextId() }].sort((a, b) => a.time - b.time) } } : c) }));
   },
-  setSelectedClip: (selectedClipId) => set({ selectedClipId }),
+  setSelectedClip: (selectedClipId) => set({ selectedClipId, selectedClipIds: selectedClipId ? [selectedClipId] : [] }),
   setZoom: (zoom) => set({ zoom: Math.min(10, Math.max(0.25, zoom)) }),
   setDuration: (duration) => set({ duration: Math.max(1, duration) }),
   setIsPlaying: (isPlaying) => set({ isPlaying }),
   setIsLooping: (isLooping) => set({ isLooping }),
   setLoopRegion: (region) => set(state => ({ loopRegion: { ...state.loopRegion, ...region } })),
-  resetProject: () => set({ clips: [], tracks: initialTracks, duration: 1, selectedClipId: null, isPlaying: false, loopRegion: { start: 0, end: 10, active: false } }),
+  resetProject: () => set({ clips: [], tracks: initialTracks, duration: 1, selectedClipId: null, selectedClipIds: [], isPlaying: false, loopRegion: { start: 0, end: 10, active: false } }),
   setSkipDuration: (seconds) => set({ skipDuration: Math.max(1, seconds) }),
   copyClip: (id) => set(state => {
     const clip = state.clips.find(c => c.id === id);
@@ -265,7 +307,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       if (fallbackTrack) targetTrackId = fallbackTrack.id;
     }
     const newId = get().addClip({ ...clipToPaste, trackId: targetTrackId, start: playheadTime, properties });
-    set({ selectedClipId: newId });
+    set({ selectedClipId: newId, selectedClipIds: [newId] });
     return newId;
   }
 }));

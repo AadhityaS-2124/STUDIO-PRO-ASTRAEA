@@ -1,4 +1,5 @@
 import React from 'react';
+import './ControlBar.css';
 
 interface ControlBarProps {
     isPlaying: boolean;
@@ -13,7 +14,7 @@ interface ControlBarProps {
     onFullscreen: () => void;
 }
 
-export default function ControlBar({
+const ControlBar = React.memo(function ControlBar({
     isPlaying,
     onPlayPause,
     onStop,
@@ -40,7 +41,7 @@ export default function ControlBar({
         <div className="h-10 bg-surface-container-lowest flex items-center px-4 justify-between border-t border-outline-variant text-ui-label-md font-ui-label-md select-none shrink-0 w-full">
             {/* Time display */}
             <div className="font-mono-code text-mono-code text-primary text-[11px] min-w-[150px]">
-                {formatTime(currentTime)} <span className="text-on-secondary-container">/</span> {formatTime(totalDuration)}
+                <span id="current-time-display-node">{formatTime(currentTime)}</span> <span className="text-on-secondary-container">/</span> {formatTime(totalDuration)}
             </div>
 
             {/* Playback Controls */}
@@ -103,4 +104,6 @@ export default function ControlBar({
             </div>
         </div>
     );
-}
+});
+
+export default ControlBar;

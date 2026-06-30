@@ -1,0 +1,178 @@
+.timeline-track {
+  height: 32px;
+  margin-bottom: 2px;
+}
+
+.playhead {
+  width: 2px;
+  height: 100%;
+  background: #ffb4ab;
+  position: absolute;
+  top: 0;
+  z-index: 50;
+  pointer-events: none;
+  box-shadow: 0 0 8px #ffb4ab;
+}
+
+.playhead::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 10px;
+  height: 10px;
+  background: #ffb4ab;
+  transform: rotate(45deg);
+}
+
+.timeline {
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #2a2a2a;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.timeline-controls {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoom-controls button,
+.clip-operations button {
+  background: #333;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.zoom-controls button:hover,
+.clip-operations button:hover {
+  background: #444;
+}
+
+.zoom-controls span {
+  font-size: 12px;
+  color: #aaa;
+  min-width: 70px;
+}
+
+.clip-operations {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.clip-operations button:nth-child(1) {
+  background-color: #e91e63;
+}
+
+.clip-operations button:nth-child(2) {
+  background-color: #3f51b5;
+}
+
+.clip-operations button:nth-child(3) {
+  background-color: #ff9800;
+}
+
+.clip-operations button:nth-child(4) {
+  background-color: #9c27b0;
+}
+
+.clip-operations button:hover {
+  filter: brightness(1.2);
+}
+
+.timeline-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.nav-button {
+  background: #444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.nav-button:hover {
+  background: #555;
+}
+
+.nav-button:active {
+  transform: scale(0.95);
+}
+
+.nav-button.large {
+  font-size: 14px;
+  padding: 8px 15px;
+  background: #555;
+}
+
+.current-time {
+  font-family: monospace;
+  font-size: 16px;
+  min-width: 80px;
+  text-align: center;
+  color: #ff9800;
+  font-weight: bold;
+  padding: 0 15px;
+}
+
+.timeline-info {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.timeline-instructions {
+  display: flex;
+  gap: 15px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.timeline-instructions span {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.timeline-container {
+  height: 350px;
+  display: flex;
+  flex-direction: column;
+  background: #2a2a2a;
+  border-top: 1px solid #333;
+  flex-shrink: 0;
+}

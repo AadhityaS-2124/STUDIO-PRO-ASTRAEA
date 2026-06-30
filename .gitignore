@@ -36,3 +36,9 @@ Thumbs.db
 *.sln
 *.sw?
 *.patch
+
+# Test / Temp Assets
+*.mp4
+*.png
+*.wav
+scratch_test.js

@@ -3,6 +3,7 @@ import { Stage, Layer, Rect, Line, Group, Text, Circle } from 'react-konva';
 import { useTimelineStore, Clip, Track } from '../stores/timelineStore';
 import { useThemeStore } from '../stores/themeStore';
 import ContextMenu from './ContextMenu';
+import './Timeline.css';
 
 const HEADER_WIDTH = 100;
 const TRACK_HEIGHT = 50;
@@ -15,9 +16,10 @@ export interface TimelineHandle {
 interface TimelineProps {
   currentTime: number;
   onTimeUpdate: (time: number) => void;
+  onTimeScrub: (time: number) => void;
 }
 
-const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTimeUpdate }, ref) => {
+const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTimeUpdate, onTimeScrub }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
@@ -33,14 +35,13 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
     clips, tracks, updateClipPosition, updateClip, duration: maxDuration,
     rippleTrimClip, loopRegion, setLoopRegion,
     splitClip, duplicateClip, trimStartToPlayhead, trimEndToPlayhead,
-    selectedClip, setSelectedClip, zoom
+    selectedClip, setSelectedClip, zoom, startTransaction, endTransaction,
+    cutClip, copyClip, pasteClip
   } = useTimelineStore((state) => ({
     clips: state.clips,
     tracks: state.tracks,
     updateClipPosition: state.updateClipPosition,
     updateClip: state.updateClip,
-    // splitClip: state.splitClip, // Removed as per new code
-    // removeClip: state.removeClip // Removed as per new code
     duration: state.duration,
     rippleTrimClip: state.rippleTrimClip,
     loopRegion: state.loopRegion,
@@ -54,7 +55,9 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
     zoom: state.zoom,
     cutClip: state.cutClip,
     copyClip: state.copyClip,
-    pasteClip: state.pasteClip
+    pasteClip: state.pasteClip,
+    startTransaction: state.startTransaction,
+    endTransaction: state.endTransaction
   }));
 
   const { canvasTheme } = useThemeStore();
@@ -150,90 +153,170 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
     }
   };
 
+  const snapToFrame = (time: number, fps: number = 30) => {
+    return Math.round(time * fps) / fps;
+  };
+
+  const snapTime = (time: number, clipId: string, duration: number) => {
+    const threshold = 10 / pixelsPerSecond;
+    let bestTime = time;
+    let minDiff = threshold;
+
+    const targets: number[] = [0, currentTime];
+    if (loopRegion && loopRegion.active) {
+      targets.push(loopRegion.start, loopRegion.end);
+    }
+
+    clips.forEach(c => {
+      if (c.id !== clipId) {
+        targets.push(c.start);
+        targets.push(c.start + c.duration);
+      }
+    });
+
+    for (const target of targets) {
+      const diff = Math.abs(time - target);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestTime = target;
+      }
+    }
+
+    for (const target of targets) {
+      const diff = Math.abs((time + duration) - target);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestTime = target - duration;
+      }
+    }
+
+    return bestTime;
+  };
+
   const playheadX = HEADER_WIDTH + (currentTime * pixelsPerSecond);
 
   const handlePlayheadDragMove = (e: any) => {
     const x = Math.max(HEADER_WIDTH, Math.min(e.target.x(), stageWidth));
-    const newTime = (x - HEADER_WIDTH) / pixelsPerSecond;
+    let newTime = (x - HEADER_WIDTH) / pixelsPerSecond;
+    newTime = snapToFrame(newTime, 30);
+    const snappedX = HEADER_WIDTH + (newTime * pixelsPerSecond);
 
-    // Update the line position while dragging
     if (playheadLineRef.current) {
-      playheadLineRef.current.points([x, 0, x, timelineHeight]);
+      playheadLineRef.current.points([snappedX, 0, snappedX, timelineHeight]);
     }
 
-    // We don't call onTimeUpdate here to avoid React re-renders during drag
-    // Instead we'll emit a custom event or just let the drag end handle it
-    // For now, let's try calling it but throttle if needed.
-    // Actually, the requirement is to use imperative updates, so we should probably
-    // notify the parent to update the video player directly without re-rendering the timeline.
-    onTimeUpdate(Math.max(0, Math.min(newTime, maxDuration)));
+    onTimeScrub(Math.max(0, Math.min(newTime, maxDuration)));
 
-    e.target.x(x);
-    e.target.y(RULER_HEIGHT); // Lock Y position
+    e.target.x(snappedX);
+    e.target.y(RULER_HEIGHT);
   };
 
   const handleDragEnd = (e: any, clip: Clip) => {
     const x = e.target.x();
     const y = e.target.y();
 
-    // Calculate new start time
-    const newStart = Math.max(0, (x - HEADER_WIDTH) / pixelsPerSecond);
+    let newStart = Math.max(0, (x - HEADER_WIDTH) / pixelsPerSecond);
+    newStart = snapToFrame(newStart, 30);
 
-    // Calculate new track
     const trackIndex = Math.floor((y - RULER_HEIGHT) / TRACK_HEIGHT);
     const targetTrack = tracks[Math.max(0, Math.min(trackIndex, tracks.length - 1))];
 
     if (targetTrack) {
+      // Re-validate overlap before saving
+      const otherClips = clips.filter(c => c.trackId === targetTrack.id && c.id !== clip.id);
+      let prevEnd = 0;
+      let nextStart = Infinity;
+      otherClips.forEach(c => {
+        if (c.start + c.duration <= newStart + 0.001) {
+          prevEnd = Math.max(prevEnd, c.start + c.duration);
+        } else if (c.start >= newStart + clip.duration - 0.001) {
+          nextStart = Math.min(nextStart, c.start);
+        }
+      });
+      if (newStart < prevEnd) newStart = prevEnd;
+      if (newStart + clip.duration > nextStart) newStart = nextStart - clip.duration;
+      newStart = Math.max(0, snapToFrame(newStart, 30));
+
       updateClipPosition(clip.id, newStart, targetTrack.id);
-      console.log(`Moved clip ${clip.id} to track ${targetTrack.id} at ${newStart}s`);
     } else {
-      // Revert if invalid (shouldn't happen with clamping)
       updateClipPosition(clip.id, newStart);
     }
 
     setIsDragging(false);
   };
 
-  const handleTrimStart = (e: any, clip: Clip) => {
-    e.cancelBubble = true;
-    const x = e.target.x();
-    // Calculate new start time based on handle position
-    // Note: This is simplified. Real implementation needs to calculate delta from original start
-    // But since handle is child of Group, x is relative to Group? No, we'll make handles separate or handle absolute pos.
-    // Actually, it's easier if handles are part of the clip Group but we need to handle the drag carefully.
-    // Let's assume we use the delta.
-  };
-
-  // Helper for trim drag (Ripple Edit)
   const onTrimRight = (e: any, clip: Clip) => {
-    const changeX = e.target.x(); // Relative to clip group (width)
-    const newDuration = Math.max(0.1, changeX / pixelsPerSecond);
+    const changeX = e.target.x();
+    let newDuration = Math.max(0.1, changeX / pixelsPerSecond);
 
-    // Use rippleTrimClip instead of updateClip
+    const snapThreshold = 10 / pixelsPerSecond;
+    const targets = [currentTime];
+    clips.forEach(c => {
+      if (c.id !== clip.id) {
+        targets.push(c.start, c.start + c.duration);
+      }
+    });
+
+    for (const target of targets) {
+      const endTime = clip.start + newDuration;
+      if (Math.abs(endTime - target) < snapThreshold) {
+        newDuration = target - clip.start;
+        break;
+      }
+    }
+
+    const otherClips = clips.filter(c => c.trackId === clip.trackId && c.id !== clip.id);
+    const nextClips = otherClips.filter(c => c.start >= clip.start + clip.duration - 0.001);
+    const minNextStart = nextClips.length ? Math.min(...nextClips.map(c => c.start)) : Infinity;
+    if (clip.start + newDuration > minNextStart) {
+      newDuration = minNextStart - clip.start;
+    }
+
+    newDuration = Math.max(0.1, snapToFrame(newDuration, 30));
     rippleTrimClip(clip.id, newDuration);
-
-    e.target.x(newDuration * pixelsPerSecond); // Snap back to valid position
+    e.target.x(newDuration * pixelsPerSecond);
   };
 
-  // Helper for trim left (Slip Edit)
   const onTrimLeft = (e: any, clip: Clip) => {
-    // This is tricky because moving left handle changes start time AND duration AND offset
-    // For simplicity in this iteration, let's just implement Right Trim (Duration)
-    // and maybe Left Trim as "Start Time + Offset" if requested.
-    // The prompt asked for: Left Edge Drag: Update clip.start (timeline position) AND clip.offset (video start point)
-
-    // We'll need to calculate the delta.
-    // Since handle is in the group, dragging it moves it relative to the group (0,0).
-    // If we drag it to +10px, it means we want to trim 10px from start.
-    // So start += 10px (time), duration -= 10px (time), offset += 10px (time).
-
     const changeX = e.target.x();
     const changeTime = changeX / pixelsPerSecond;
 
     if (changeTime !== 0) {
-      const newStart = clip.start + changeTime;
-      const newDuration = clip.duration - changeTime;
-      const newOffset = (clip.offset || 0) + changeTime;
+      let newStart = clip.start + changeTime;
+      let newDuration = clip.duration - changeTime;
+      let newOffset = (clip.offset || 0) + changeTime;
+
+      const snapThreshold = 10 / pixelsPerSecond;
+      const targets = [0, currentTime];
+      clips.forEach(c => {
+        if (c.id !== clip.id) {
+          targets.push(c.start, c.start + c.duration);
+        }
+      });
+
+      for (const target of targets) {
+        if (Math.abs(newStart - target) < snapThreshold) {
+          const diff = target - newStart;
+          newStart = target;
+          newDuration -= diff;
+          newOffset += diff;
+          break;
+        }
+      }
+
+      const otherClips = clips.filter(c => c.trackId === clip.trackId && c.id !== clip.id);
+      const prevClips = otherClips.filter(c => c.start + c.duration <= clip.start + 0.001);
+      const maxPrevEnd = prevClips.length ? Math.max(...prevClips.map(c => c.start + c.duration)) : 0;
+      if (newStart < maxPrevEnd) {
+        const diff = maxPrevEnd - newStart;
+        newStart = maxPrevEnd;
+        newDuration -= diff;
+        newOffset += diff;
+      }
+
+      newStart = snapToFrame(newStart, 30);
+      newDuration = snapToFrame(newDuration, 30);
+      newOffset = snapToFrame(newOffset, 30);
 
       if (newDuration > 0.1) {
         updateClip(clip.id, {
@@ -244,7 +327,7 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
       }
     }
 
-    e.target.x(0); // Reset handle position relative to group
+    e.target.x(0);
   };
 
   const getFileName = (path: string) => {
@@ -392,12 +475,72 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
                 x={x}
                 y={y}
                 draggable
+                dragBoundFunc={(pos) => {
+                  if (!stageRef.current) return pos;
+                  const stageAbsPos = stageRef.current.getAbsolutePosition();
+                  
+                  // Calculate time relative to timeline start
+                  const relativeX = pos.x - stageAbsPos.x - HEADER_WIDTH;
+                  const rawTime = relativeX / pixelsPerSecond;
+                  
+                  // Snap time
+                  let snappedTime = snapTime(rawTime, clip.id, clip.duration);
+                  snappedTime = snapToFrame(snappedTime, 30);
+                  
+                  // Track lane snapping (Y coordinate)
+                  const relativeY = pos.y - stageAbsPos.y - RULER_HEIGHT;
+                  const trackIndex = Math.round(relativeY / TRACK_HEIGHT);
+                  const clampedTrackIndex = Math.max(0, Math.min(trackIndex, tracks.length - 1));
+                  
+                  // Overlap prevention on target track
+                  const targetTrack = tracks[clampedTrackIndex];
+                  const otherClips = clips.filter(c => c.trackId === targetTrack.id && c.id !== clip.id);
+                  
+                  let prevEnd = 0;
+                  let nextStart = Infinity;
+                  
+                  otherClips.forEach(c => {
+                    if (c.start + c.duration <= snappedTime + 0.001) {
+                      prevEnd = Math.max(prevEnd, c.start + c.duration);
+                    } else if (c.start >= snappedTime + clip.duration - 0.001) {
+                      nextStart = Math.min(nextStart, c.start);
+                    } else {
+                      // We are overlapping. Find closer edge to clamp to
+                      const toLeft = Math.abs(snappedTime - (c.start + c.duration));
+                      const toRight = Math.abs((snappedTime + clip.duration) - c.start);
+                      if (toLeft < toRight) {
+                        prevEnd = Math.max(prevEnd, c.start + c.duration);
+                      } else {
+                        nextStart = Math.min(nextStart, c.start);
+                      }
+                    }
+                  });
+                  
+                  // Clamp to prevent overlap
+                  let clampedTime = snappedTime;
+                  if (clampedTime < prevEnd) clampedTime = prevEnd;
+                  if (clampedTime + clip.duration > nextStart) clampedTime = nextStart - clip.duration;
+                  
+                  clampedTime = Math.max(0, snapToFrame(clampedTime, 30));
+                  
+                  const finalAbsX = stageAbsPos.x + HEADER_WIDTH + (clampedTime * pixelsPerSecond);
+                  const finalAbsY = stageAbsPos.y + RULER_HEIGHT + (clampedTrackIndex * TRACK_HEIGHT) + 10;
+                  
+                  return {
+                    x: finalAbsX,
+                    y: finalAbsY
+                  };
+                }}
                 onDragStart={() => {
+                  startTransaction();
                   setIsDragging(true);
                   setSelectedClip(clip.id);
                   setContextMenu(null); // Close context menu on drag start
                 }}
-                onDragEnd={(e) => handleDragEnd(e, clip)}
+                onDragEnd={(e) => {
+                  handleDragEnd(e, clip);
+                  endTransaction();
+                }}
                 onClick={(e) => {
                   e.cancelBubble = true;
                   setSelectedClip(clip.id);
@@ -446,11 +589,19 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
                       height={TRACK_HEIGHT - 20}
                       fill="rgba(255,255,255,0.5)"
                       draggable
-                      dragBoundFunc={(pos) => ({
-                        x: pos.x, // Allow X dragging (we'll calculate delta in event)
-                        y: stageRef.current.getAbsolutePosition().y + y // Lock Y
-                      })}
-                      onDragEnd={(e) => onTrimLeft(e, clip)}
+                      dragBoundFunc={(pos) => {
+                        if (!stageRef.current) return pos;
+                        const stageAbsPos = stageRef.current.getAbsolutePosition();
+                        return {
+                          x: pos.x,
+                          y: stageAbsPos.y + y
+                        };
+                      }}
+                      onDragStart={() => startTransaction()}
+                      onDragEnd={(e) => {
+                        onTrimLeft(e, clip);
+                        endTransaction();
+                      }}
                       onMouseEnter={(e) => {
                         const container = e.target.getStage()?.container();
                         if (!container) return;
@@ -470,11 +621,19 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
                       height={TRACK_HEIGHT - 20}
                       fill="rgba(255,255,255,0.5)"
                       draggable
-                      dragBoundFunc={(pos) => ({
-                        x: pos.x,
-                        y: stageRef.current.getAbsolutePosition().y + y
-                      })}
-                      onDragEnd={(e) => onTrimRight(e, clip)}
+                      dragBoundFunc={(pos) => {
+                        if (!stageRef.current) return pos;
+                        const stageAbsPos = stageRef.current.getAbsolutePosition();
+                        return {
+                          x: pos.x,
+                          y: stageAbsPos.y + y
+                        };
+                      }}
+                      onDragStart={() => startTransaction()}
+                      onDragEnd={(e) => {
+                        onTrimRight(e, clip);
+                        endTransaction();
+                      }}
                       onMouseEnter={(e) => {
                         const container = e.target.getStage()?.container();
                         if (!container) return;
@@ -512,7 +671,12 @@ const Timeline = forwardRef<TimelineHandle, TimelineProps>(({ currentTime, onTim
               y: RULER_HEIGHT
             })}
             onDragStart={() => setIsDraggingPlayhead(true)}
-            onDragEnd={() => setIsDraggingPlayhead(false)}
+            onDragEnd={() => {
+              setIsDraggingPlayhead(false);
+              const x = playheadCircleRef.current ? playheadCircleRef.current.x() : playheadX;
+              const newTime = snapToFrame((x - HEADER_WIDTH) / pixelsPerSecond, 30);
+              onTimeUpdate(Math.max(0, Math.min(newTime, maxDuration)));
+            }}
             onDragMove={handlePlayheadDragMove}
           />
         </Layer>

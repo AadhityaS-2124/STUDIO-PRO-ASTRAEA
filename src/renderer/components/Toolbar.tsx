@@ -1,5 +1,6 @@
 
 import React from 'react';
+import './Toolbar.css';
 
 interface ToolbarProps {
   onSplit: () => void;
@@ -11,7 +12,7 @@ interface ToolbarProps {
   onExport: () => void;
 }
 
-export default function Toolbar({ onSplit, onDelete, onDuplicate, onImportSRT, onZoomIn, onZoomOut, onExport }: ToolbarProps) {
+const Toolbar = React.memo(function Toolbar({ onSplit, onDelete, onDuplicate, onImportSRT, onZoomIn, onZoomOut, onExport }: ToolbarProps) {
   return (
     <div className="h-9 bg-surface-container-lowest px-4 flex items-center justify-between border-b border-outline-variant text-ui-label-md font-ui-label-md shrink-0">
       <div className="flex items-center gap-4">
@@ -90,4 +91,6 @@ export default function Toolbar({ onSplit, onDelete, onDuplicate, onImportSRT, o
       </div>
     </div>
   );
-}
+});
+
+export default Toolbar;

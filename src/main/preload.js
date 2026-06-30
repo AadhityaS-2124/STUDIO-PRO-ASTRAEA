@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld(
       }
     },
     receive: (channel, func) => {
-      let validChannels = ['open-media', 'new-project', 'export-video'];
+      let validChannels = ['open-media', 'new-project', 'export-video', 'export-progress'];
       if (validChannels.includes(channel)) {
         // Deliberately strip event as it includes `sender` 
         const listener = (event, ...args) => func(...args);
@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld(
       return undefined;
     },
     invoke: (channel, data) => {
-      let validChannels = ['open-file-dialog', 'show-save-dialog', 'export-project', 'create-proxy', 'save-project', 'load-project'];
+      let validChannels = ['open-file-dialog', 'show-save-dialog', 'export-project', 'create-proxy', 'save-project', 'load-project', 'save-autosave', 'load-autosave', 'clear-autosave', 'cancel-export', 'get-metadata'];
       if (validChannels.includes(channel)) {
         return ipcRenderer.invoke(channel, data);
       }
@@ -32,4 +32,4 @@ contextBridge.exposeInMainWorld(
   }
 );
 
-console.log('Preload script executed successfully'); 
+console.log('Preload script executed successfully');

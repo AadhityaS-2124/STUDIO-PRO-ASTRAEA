@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useTimelineStore, Clip, TransitionType } from './stores/timelineStore';
 import { useThemeStore } from './stores/themeStore';
 import Timeline, { TimelineHandle } from './components/Timeline';
@@ -15,23 +15,65 @@ interface ElectronAPI {
 
 declare global { interface Window { api?: ElectronAPI } }
 
-const fileUrl = (path: string) => path.startsWith('file:') || path.startsWith('http')
-  ? path
-  : `file:///${encodeURI(path.replace(/\\/g, '/'))}`;
+const fileUrl = (path: string) => {
+  if (path.startsWith('media:') || path.startsWith('http') || path.startsWith('blob:')) return path;
+  if (path.startsWith('file:')) return path.replace(/^file:/i, 'media:');
+  const clean = path.replace(/\\/g, '/');
+  return `media:///${encodeURI(clean.startsWith('/') ? clean.slice(1) : clean)}`;
+};
 
 const getMediaDuration = (url: string, audio: boolean): Promise<number> => new Promise((resolve, reject) => {
   const media = document.createElement(audio ? 'audio' : 'video');
   media.preload = 'metadata';
-  media.onloadedmetadata = () => resolve(media.duration);
+  const handleDuration = () => {
+    if (isFinite(media.duration) && media.duration > 0) {
+      resolve(media.duration);
+    } else {
+      media.currentTime = 1e101;
+      media.ondurationchange = () => {
+        media.ondurationchange = null;
+        if (isFinite(media.duration) && media.duration > 0) resolve(media.duration);
+        else resolve(10);
+      };
+    }
+  };
+  media.onloadedmetadata = handleDuration;
   media.onerror = () => reject(new Error('Unable to read media metadata'));
   media.src = url;
 });
+
+const formatTime = (seconds: number) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 100);
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+};
+
+const validateProjectData = (data: any): boolean => {
+  if (!data || typeof data !== 'object') return false;
+  if (!Array.isArray(data.clips) || !Array.isArray(data.tracks)) return false;
+  for (const c of data.clips) {
+    if (typeof c.id !== 'string' || typeof c.trackId !== 'string' || typeof c.start !== 'number' || typeof c.duration !== 'number') {
+      return false;
+    }
+  }
+  for (const t of data.tracks) {
+    if (typeof t.id !== 'string' || typeof t.name !== 'string' || typeof t.type !== 'string') {
+      return false;
+    }
+  }
+  return true;
+};
 
 export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [exportStatus, setExportStatus] = useState('');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [recoveryData, setRecoveryData] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
+  
   const currentTimeRef = useRef(0);
   const lastFrameRef = useRef(performance.now());
   const rafRef = useRef<number | undefined>(undefined);
@@ -41,21 +83,41 @@ export default function App() {
 
   const state = useTimelineStore();
   const { mode, toggleTheme } = useThemeStore();
-  const selectedClip = state.clips.find(c => c.id === state.selectedClipId) ?? null;
+  
+  const selectedClip = useMemo(() => {
+    return state.clips.find(c => c.id === state.selectedClipId) ?? null;
+  }, [state.clips, state.selectedClipId]);
 
   useLayoutEffect(() => document.body.setAttribute('data-theme', mode), [mode]);
 
-  const seek = (time: number) => {
-    const bounded = Math.max(0, Math.min(time, state.duration));
+  const seek = useCallback((time: number, forceStateUpdate = true) => {
+    const duration = useTimelineStore.getState().duration;
+    const bounded = Math.max(0, Math.min(time, duration));
     currentTimeRef.current = bounded;
-    setCurrentTime(bounded);
+    if (forceStateUpdate) {
+      setCurrentTime(bounded);
+    }
     timelineRef.current?.updatePlayhead(bounded);
     playerRef.current?.seekTo(bounded);
-  };
+
+    const timeNode = document.getElementById('current-time-display-node');
+    if (timeNode) {
+      timeNode.textContent = formatTime(bounded);
+    }
+  }, []);
+
+  const handleTimeScrub = useCallback((time: number) => {
+    seek(time, false);
+  }, [seek]);
+
+  const handleTimeUpdate = useCallback((time: number) => {
+    seek(time, true);
+  }, [seek]);
 
   useEffect(() => {
     if (!state.isPlaying) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      setCurrentTime(currentTimeRef.current);
       return;
     }
     lastFrameRef.current = performance.now();
@@ -63,38 +125,73 @@ export default function App() {
       const delta = Math.min(0.1, (now - lastFrameRef.current) / 1000);
       lastFrameRef.current = now;
       let next = currentTimeRef.current + delta;
-      if (state.loopRegion.active && next >= state.loopRegion.end) next = state.loopRegion.start;
-      else if (next >= state.duration) {
-        if (state.isLooping) next = 0;
-        else { next = state.duration; state.setIsPlaying(false); }
+      const latest = useTimelineStore.getState();
+      if (latest.loopRegion.active && next >= latest.loopRegion.end) next = latest.loopRegion.start;
+      else if (next >= latest.duration) {
+        if (latest.isLooping) next = 0;
+        else { next = latest.duration; latest.setIsPlaying(false); }
       }
-      currentTimeRef.current = next;
-      setCurrentTime(next);
+      seek(next, false);
       rafRef.current = requestAnimationFrame(frame);
     };
     rafRef.current = requestAnimationFrame(frame);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [state.isPlaying, state.isLooping, state.duration, state.loopRegion.active, state.loopRegion.start, state.loopRegion.end]);
+  }, [state.isPlaying, seek]);
 
-  const importPath = async (path: string) => {
+  const importPath = useCallback(async (path: string) => {
     const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(path);
     const audio = /\.(mp3|wav|aac|m4a|flac|ogg)$/i.test(path);
     const type = isImage ? 'image' : (audio ? 'audio' : 'video');
-    const track = state.tracks.find(t => t.type === type);
+    const store = useTimelineStore.getState();
+    const track = store.tracks.find(t => t.type === type);
     if (!track) return;
     const url = fileUrl(path);
-    const id = state.addClip({
+    const id = store.addClip({
       trackId: track.id, type, start: currentTimeRef.current, duration: isImage ? 5 : 10, offset: 0,
       path: url, name: decodeURIComponent(path.split(/[/\\]/).pop() || 'Media'),
       properties: { brightness: 0, contrast: 1, saturation: 1, opacity: 1, transition: 'none', transitionDuration: 0.5, keyframes: [] }
     });
-    state.setSelectedClip(id);
+    store.setSelectedClip(id);
     if (!isImage) {
-      try { state.updateClip(id, { duration: await getMediaDuration(url, audio) }); } catch (error) { console.error(error); }
+      let duration = 10;
+      let codec: string | undefined;
+      let audioCodec: string | undefined;
+      if (window.api) {
+        try {
+          const meta = await window.api.invoke('get-metadata', path) as any;
+          if (meta && meta.success) {
+            duration = meta.duration;
+            codec = meta.codec;
+            audioCodec = meta.audioCodec;
+          } else {
+            duration = await getMediaDuration(url, audio);
+          }
+        } catch (error) {
+          try {
+            duration = await getMediaDuration(url, audio);
+          } catch (err) {
+            duration = 10;
+          }
+        }
+      } else {
+        try {
+          duration = await getMediaDuration(url, audio);
+        } catch (err) {
+          duration = 10;
+        }
+      }
+      useTimelineStore.getState().updateClip(id, {
+        duration,
+        properties: {
+          ...store.clips.find(c => c.id === id)?.properties,
+          codec,
+          audioCodec
+        }
+      });
     }
-  };
+  }, []);
 
-  const addMedia = async (providedPath?: string) => {
+  const addMedia = useCallback(async (providedPath?: string) => {
     if (providedPath) return importPath(providedPath);
     if (window.api) {
       const path = await window.api.invoke('open-file-dialog');
@@ -109,64 +206,118 @@ export default function App() {
       const isImage = file.type.startsWith('image');
       const audio = file.type.startsWith('audio');
       const type = isImage ? 'image' : (audio ? 'audio' : 'video');
-      const track = state.tracks.find(t => t.type === type);
+      const store = useTimelineStore.getState();
+      const track = store.tracks.find(t => t.type === type);
       if (!track) return;
       const url = URL.createObjectURL(file);
-      const id = state.addClip({ trackId: track.id, type, start: currentTimeRef.current, duration: isImage ? 5 : 10, offset: 0, path: url, name: file.name });
-      state.setSelectedClip(id);
+      const id = store.addClip({ trackId: track.id, type, start: currentTimeRef.current, duration: isImage ? 5 : 10, offset: 0, path: url, name: file.name });
+      store.setSelectedClip(id);
       if (!isImage) {
-        try { state.updateClip(id, { duration: await getMediaDuration(url, audio) }); } catch { /* retain default */ }
+        try {
+          const duration = await getMediaDuration(url, audio);
+          useTimelineStore.getState().updateClip(id, { duration });
+        } catch { /* retain default */ }
       }
     };
     input.click();
-  };
+  }, [importPath]);
 
-  const addText = () => {
-    const track = state.tracks.find(t => t.type === 'text');
+  const addText = useCallback(() => {
+    const store = useTimelineStore.getState();
+    const track = store.tracks.find(t => t.type === 'text');
     if (!track) return;
-    const id = state.addClip({ trackId: track.id, type: 'text', start: currentTimeRef.current, duration: 5, offset: 0, path: 'New Text', name: 'Text Overlay', properties: { text: 'New Text', fontSize: 40, color: '#ffffff', x: 50, y: 50, opacity: 1, transition: 'fade', transitionDuration: 0.4, keyframes: [] } });
-    state.setSelectedClip(id);
-  };
+    const id = store.addClip({ trackId: track.id, type: 'text', start: currentTimeRef.current, duration: 5, offset: 0, path: 'New Text', name: 'Text Overlay', properties: { text: 'New Text', fontSize: 40, color: '#ffffff', x: 50, y: 50, opacity: 1, transition: 'fade', transitionDuration: 0.4, keyframes: [] } });
+    store.setSelectedClip(id);
+  }, []);
 
-  const selectedOrUnderPlayhead = () => selectedClip ?? state.clips.find(c => currentTimeRef.current >= c.start && currentTimeRef.current < c.start + c.duration) ?? null;
-  const split = () => { const clip = selectedOrUnderPlayhead(); if (clip) state.splitClip(clip.id, currentTimeRef.current); };
-  const remove = () => { const clip = selectedOrUnderPlayhead(); if (clip) state.removeClip(clip.id); };
-  const duplicate = () => { const clip = selectedOrUnderPlayhead(); if (clip) state.duplicateClip(clip.id); };
-  const skipForward = () => seek(currentTimeRef.current + state.skipDuration);
-  const skipBackward = () => seek(currentTimeRef.current - state.skipDuration);
+  const split = useCallback(() => {
+    const store = useTimelineStore.getState();
+    const selected = store.clips.find(c => c.id === store.selectedClipId) ?? null;
+    const clip = selected ?? store.clips.find(c => currentTimeRef.current >= c.start && currentTimeRef.current < c.start + c.duration) ?? null;
+    if (clip) store.splitClip(clip.id, currentTimeRef.current);
+  }, []);
 
-  const importSrt = () => {
+  const remove = useCallback(() => {
+    const store = useTimelineStore.getState();
+    if (store.selectedClipIds && store.selectedClipIds.length > 1) {
+      store.removeClips(store.selectedClipIds);
+    } else {
+      const selected = store.clips.find(c => c.id === store.selectedClipId) ?? null;
+      const clip = selected ?? store.clips.find(c => currentTimeRef.current >= c.start && currentTimeRef.current < c.start + c.duration) ?? null;
+      if (clip) store.removeClip(clip.id);
+    }
+  }, []);
+
+  const duplicate = useCallback(() => {
+    const store = useTimelineStore.getState();
+    const selected = store.clips.find(c => c.id === store.selectedClipId) ?? null;
+    const clip = selected ?? store.clips.find(c => currentTimeRef.current >= c.start && currentTimeRef.current < c.start + c.duration) ?? null;
+    if (clip) store.duplicateClip(clip.id);
+  }, []);
+
+  const skipForward = useCallback(() => {
+    const skip = useTimelineStore.getState().skipDuration;
+    seek(currentTimeRef.current + skip);
+  }, [seek]);
+
+  const skipBackward = useCallback(() => {
+    const skip = useTimelineStore.getState().skipDuration;
+    seek(currentTimeRef.current - skip);
+  }, [seek]);
+
+  const importSrt = useCallback(() => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = '.srt';
     input.onchange = async () => {
-      const file = input.files?.[0]; const track = state.tracks.find(t => t.type === 'text');
-      if (file && track) parseSRT(await file.text(), track.id).forEach(state.addClip);
+      const file = input.files?.[0];
+      const store = useTimelineStore.getState();
+      const track = store.tracks.find(t => t.type === 'text');
+      if (file && track) {
+        parseSRT(await file.text(), track.id).forEach(store.addClip);
+      }
     };
     input.click();
-  };
+  }, []);
 
-  const exportProject = async () => {
-    if (!window.api) { setExportStatus('MP4 export is available in the Electron app.'); return; }
+  const exportProject = useCallback(async () => {
+    if (!window.api) {
+      setExportStatus('Export requires native Electron. You are viewing the web browser preview (http://localhost:5173). Please switch to the standalone Electron app window on your taskbar.');
+      return;
+    }
     const latest = useTimelineStore.getState();
     setExportStatus('Preparing export…');
+    setExportProgress(0);
     try {
       const result = await window.api.invoke('export-project', { clips: latest.clips, duration: latest.duration, width: 1280, height: 720, fps: 30 });
-      if (result && typeof result === 'object' && 'canceled' in result && (result as { canceled: boolean }).canceled) setExportStatus('Export canceled.');
-      else setExportStatus(`Export complete: ${(result as { filePath?: string }).filePath ?? ''}`);
-    } catch (error) { setExportStatus(`Export failed: ${error instanceof Error ? error.message : String(error)}`); }
-  };
+      if (result && typeof result === 'object' && 'canceled' in result && (result as { canceled: boolean }).canceled) {
+        setExportStatus('Export canceled.');
+      } else {
+        setExportStatus(`Export complete: ${(result as { filePath?: string }).filePath ?? ''}`);
+      }
+    } catch (error) {
+      setExportStatus(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setExportProgress(null);
+    }
+  }, []);
 
-  const saveProject = async () => {
-    if (!window.api) { setExportStatus('Project saving requires the Electron app.'); return; }
+  const saveProject = useCallback(async () => {
+    if (!window.api) {
+      setExportStatus('Project saving requires Electron. You are viewing the web browser preview. Switch to the native Electron app window on your taskbar.');
+      return;
+    }
     const latest = useTimelineStore.getState();
     try {
       const stateStr = JSON.stringify({ clips: latest.clips, tracks: latest.tracks, duration: latest.duration }, null, 2);
       const result = await window.api.invoke('save-project', stateStr) as { canceled: boolean, filePath?: string, error?: string };
-      if (!result.canceled && result.filePath) setExportStatus(`Project saved to ${result.filePath}`);
+      if (!result.canceled && result.filePath) {
+        setExportStatus(`Project saved to ${result.filePath}`);
+        await window.api.invoke('clear-autosave');
+      }
       else if (result.error) setExportStatus(`Save failed: ${result.error}`);
     } catch (err) { setExportStatus(`Save failed: ${String(err)}`); }
-  };
+  }, []);
 
-  const loadProject = async () => {
+  const loadProject = useCallback(async () => {
     if (!window.api) { setExportStatus('Project loading requires the Electron app.'); return; }
     try {
       const result = await window.api.invoke('load-project') as { canceled: boolean, data?: string, error?: string };
@@ -174,62 +325,140 @@ export default function App() {
       if (result.error) { setExportStatus(`Load failed: ${result.error}`); return; }
       if (result.data) {
         const loadedState = JSON.parse(result.data);
-        state.loadProject(loadedState);
+        if (!validateProjectData(loadedState)) {
+          setExportStatus('Load failed: Invalid project file format.');
+          return;
+        }
+        useTimelineStore.getState().loadProject(loadedState);
         setExportStatus('Project loaded successfully.');
         seek(0);
+        await window.api.invoke('clear-autosave');
       }
     } catch (err) { setExportStatus(`Load failed: ${String(err)}`); }
-  };
+  }, [seek]);
 
-  const createProxy = async () => {
-    if (!selectedClip || !window.api || !['video', 'audio'].includes(selectedClip.type)) return;
+  const createProxy = useCallback(async () => {
+    const store = useTimelineStore.getState();
+    const selected = store.clips.find(c => c.id === store.selectedClipId) ?? null;
+    if (!selected || !window.api || !['video', 'audio'].includes(selected.type)) return;
     setExportStatus('Creating lightweight proxy…');
     try {
-      const result = await window.api.invoke('create-proxy', { path: selectedClip.path, clipId: selectedClip.id }) as { path: string };
-      state.updateClip(selectedClip.id, { properties: { ...selectedClip.properties, proxyPath: fileUrl(result.path) } });
+      const result = await window.api.invoke('create-proxy', { path: selected.path, clipId: selected.id }) as { path: string };
+      store.updateClip(selected.id, { properties: { ...selected.properties, proxyPath: fileUrl(result.path) } });
       setExportStatus('Proxy ready. Preview will use it automatically.');
     } catch (error) { setExportStatus(`Proxy failed: ${error instanceof Error ? error.message : String(error)}`); }
-  };
+  }, []);
 
   useEffect(() => {
     if (!window.api) return;
     const cleanups = [
       window.api.receive('open-media', path => { if (typeof path === 'string') void addMedia(path); }),
-      window.api.receive('new-project', () => { state.resetProject(); seek(0); }),
+      window.api.receive('new-project', () => {
+        const store = useTimelineStore.getState();
+        store.resetProject();
+        seek(0);
+      }),
       window.api.receive('export-video', () => void exportProject())
     ];
     return () => cleanups.forEach(cleanup => cleanup?.());
-  }, []);
+  }, [addMedia, exportProject, seek]);
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement)?.matches('input,textarea,select') || document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
-      if (event.code === 'Space') { event.preventDefault(); state.setIsPlaying(!state.isPlaying); }
+      const store = useTimelineStore.getState();
+      if (event.code === 'Space') { event.preventDefault(); store.setIsPlaying(!store.isPlaying); }
       if (event.key === 'Delete') remove();
       if (event.key.toLowerCase() === 's') split();
+      if (event.ctrlKey && event.key.toLowerCase() === 'a') { event.preventDefault(); store.selectAllClips(); }
       if (event.ctrlKey && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicate(); }
       if (event.ctrlKey && event.key.toLowerCase() === 'z') {
         event.preventDefault();
-        if (event.shiftKey) state.redo(); else state.undo();
+        if (event.shiftKey) store.redo(); else store.undo();
       }
-      if (event.ctrlKey && event.key.toLowerCase() === 'y') { event.preventDefault(); state.redo(); }
-      if (event.ctrlKey && event.key.toLowerCase() === 'c') { event.preventDefault(); if (selectedClip) state.copyClip(selectedClip.id); }
-      if (event.ctrlKey && event.key.toLowerCase() === 'x') { event.preventDefault(); if (selectedClip) state.cutClip(selectedClip.id); }
-      if (event.ctrlKey && event.key.toLowerCase() === 'v') { event.preventDefault(); state.pasteClip(currentTimeRef.current); }
+      if (event.ctrlKey && event.key.toLowerCase() === 'y') { event.preventDefault(); store.redo(); }
+      const selected = store.clips.find(c => c.id === store.selectedClipId) ?? null;
+      if (event.ctrlKey && event.key.toLowerCase() === 'c') { event.preventDefault(); if (selected) store.copyClip(selected.id); }
+      if (event.ctrlKey && event.key.toLowerCase() === 'x') { event.preventDefault(); if (selected) store.cutClip(selected.id); }
+      if (event.ctrlKey && event.key.toLowerCase() === 'v') { event.preventDefault(); store.pasteClip(currentTimeRef.current); }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
-  });
+  }, [remove, split, duplicate]);
 
-  const updateProperties = (updates: NonNullable<Clip['properties']>) => {
-    if (selectedClip) state.updateClip(selectedClip.id, { properties: { ...selectedClip.properties, ...updates } });
-  };
+  const updateProperties = useCallback((updates: NonNullable<Clip['properties']>) => {
+    const store = useTimelineStore.getState();
+    const selected = store.clips.find(c => c.id === store.selectedClipId) ?? null;
+    if (selected) store.updateClip(selected.id, { properties: { ...selected.properties, ...updates } });
+  }, []);
+
+  // Autosave Mount Check
+  useEffect(() => {
+    if (window.api) {
+      window.api.invoke('load-autosave')
+        .then((result: any) => {
+          if (result && result.data) {
+            setRecoveryData(result.data);
+          }
+        })
+        .catch(err => console.error('Failed to load autosave:', err));
+    }
+  }, []);
+
+  // Debounced Autosave Trigger
+  useEffect(() => {
+    if (!window.api) return;
+    if (state.clips.length === 0) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const latest = useTimelineStore.getState();
+        const stateStr = JSON.stringify({ clips: latest.clips, tracks: latest.tracks, duration: latest.duration }, null, 2);
+        await window.api!.invoke('save-autosave', stateStr);
+      } catch (err) {
+        console.error('Failed to autosave:', err);
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [state.clips, state.tracks, state.duration]);
+
+  // Listen to FFmpeg export progress
+  useEffect(() => {
+    if (!window.api) return;
+    const cleanup = window.api.receive('export-progress', (data: any) => {
+      if (data && typeof data.progress === 'number') {
+        setExportProgress(data.progress);
+        setExportStatus(`Exporting: ${data.progress}%`);
+      }
+    });
+    return () => cleanup?.();
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    const latest = useTimelineStore.getState();
+    latest.setZoom(latest.zoom * 1.5);
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    const latest = useTimelineStore.getState();
+    latest.setZoom(latest.zoom / 1.5);
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-background text-on-surface overflow-hidden font-ui-label-md select-none app" ref={appRef} tabIndex={0}>
       {/* TOP NAVBAR */}
       <header className="bg-surface-container-lowest border-b border-outline-variant flex items-center w-full px-panel-padding h-toolbar-height gap-element-gap z-50">
-        <div className="font-label-caps text-primary uppercase tracking-widest mr-6 pl-2 text-[12px] font-bold">
+        <div className="font-label-caps text-primary uppercase tracking-widest mr-4 pl-2 text-[12px] font-bold flex items-center gap-2">
           StudioPro Astraea
+          {window.api ? (
+            <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded text-[9px] font-mono normal-case tracking-normal shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+              ⚡ ELECTRON NATIVE
+            </span>
+          ) : (
+            <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 px-1.5 py-0.5 rounded text-[9px] font-mono normal-case tracking-normal" title="You are currently in web browser preview mode. MP4 export & saving require switching to the native desktop Electron window on your taskbar.">
+              🌐 WEB BROWSER PREVIEW
+            </span>
+          )}
         </div>
         <nav className="flex items-center gap-2 text-ui-label-md relative">
           <div className="relative h-full flex items-center">
@@ -291,6 +520,13 @@ export default function App() {
               </div>
             )}
           </div>
+          <div className="h-4 w-px bg-outline-variant/60 mx-1"></div>
+          <button onClick={() => state.past.length > 0 && state.undo()} className={`px-2 py-1 rounded select-none flex items-center gap-1 font-bold text-[11px] ${state.past.length > 0 ? 'text-on-surface hover:bg-surface-container-highest cursor-pointer' : 'opacity-40 cursor-not-allowed text-on-surface-variant'}`} title="Undo (Ctrl+Z)">
+            <span className="material-symbols-outlined text-[15px]">undo</span> Undo
+          </button>
+          <button onClick={() => state.future.length > 0 && state.redo()} className={`px-2 py-1 rounded select-none flex items-center gap-1 font-bold text-[11px] ${state.future.length > 0 ? 'text-on-surface hover:bg-surface-container-highest cursor-pointer' : 'opacity-40 cursor-not-allowed text-on-surface-variant'}`} title="Redo (Ctrl+Y)">
+            <span className="material-symbols-outlined text-[15px]">redo</span> Redo
+          </button>
         </nav>
         
         <div className="ml-auto flex items-center gap-3 pr-2">
@@ -349,6 +585,43 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {recoveryData && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 text-amber-200 px-4 py-2 flex items-center justify-between z-[100] gap-4">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px] text-amber-400">warning</span>
+            <span className="text-[12px] font-semibold">Unsaved progress detected. Would you like to restore your auto-saved session?</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => {
+                try {
+                  const parsed = JSON.parse(recoveryData);
+                  state.loadProject(parsed);
+                  setExportStatus('Restored auto-saved session.');
+                  seek(0);
+                } catch (err) {
+                  console.error(err);
+                }
+                setRecoveryData(null);
+                window.api?.invoke('clear-autosave');
+              }}
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[11px] rounded font-bold transition-colors"
+            >
+              Restore
+            </button>
+            <button 
+              onClick={() => {
+                setRecoveryData(null);
+                window.api?.invoke('clear-autosave');
+              }}
+              className="px-2.5 py-1 bg-surface-container hover:bg-surface-container-highest border border-outline-variant text-on-surface-variant hover:text-on-surface text-[11px] rounded font-bold transition-colors"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* WORKSPACE AREA */}
       <main className="flex flex-row h-[calc(100vh-40px-240px)] w-full overflow-hidden">
@@ -490,7 +763,20 @@ export default function App() {
 
             <div className="flex-1 flex items-center justify-center overflow-hidden p-4">
               <div className="w-full h-full max-w-[960px] max-h-[540px] aspect-video flex items-center justify-center bg-black border border-outline-variant/40 rounded-lg overflow-hidden shadow-2xl relative">
-                <VideoPlayer ref={playerRef} clips={state.clips} tracks={state.tracks} currentTime={currentTime} playing={state.isPlaying} volume={volume} />
+                <VideoPlayer
+                  ref={playerRef}
+                  clips={state.clips}
+                  tracks={state.tracks}
+                  currentTime={currentTime}
+                  playing={state.isPlaying}
+                  volume={volume}
+                  selectedClipId={state.selectedClipId}
+                  onSelectClip={(id) => state.setSelectedClip(id)}
+                  onUpdateClipProperties={(id, updates) => {
+                    const c = state.clips.find(clip => clip.id === id);
+                    if (c) state.updateClip(id, { properties: { ...c.properties, ...updates } });
+                  }}
+                />
               </div>
             </div>
 
@@ -746,19 +1032,42 @@ export default function App() {
 
       {/* BOTTOM TIMELINE AREA */}
       <footer className="h-[timeline-height] bg-background flex flex-col border-t border-outline-variant w-full overflow-hidden star-field shrink-0">
-        <Toolbar onSplit={split} onDelete={remove} onDuplicate={duplicate} onImportSRT={importSrt} onZoomIn={() => state.setZoom(state.zoom * 1.5)} onZoomOut={() => state.setZoom(state.zoom / 1.5)} onExport={() => void exportProject()} />
+        <Toolbar onSplit={split} onDelete={remove} onDuplicate={duplicate} onImportSRT={importSrt} onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} onExport={exportProject} />
         <div className="flex-1 flex overflow-hidden relative">
-          <Timeline ref={timelineRef} currentTime={currentTime} onTimeUpdate={seek} />
+          <Timeline ref={timelineRef} currentTime={currentTime} onTimeUpdate={handleTimeUpdate} onTimeScrub={handleTimeScrub} />
         </div>
       </footer>
 
       {exportStatus && (
-        <div className="fixed bottom-4 right-4 bg-surface-container-high border border-outline-variant text-on-surface p-4 rounded-md shadow-lg z-[9999] flex items-center gap-3">
-          <span className="material-symbols-outlined text-primary">info</span>
-          <span className="text-[12px] font-medium">{exportStatus}</span>
-          <button className="text-on-surface-variant hover:text-on-surface" onClick={() => setExportStatus('')}>
-            <span className="material-symbols-outlined text-[16px]">close</span>
-          </button>
+        <div className="fixed bottom-4 right-4 bg-surface-container-high border border-outline-variant text-on-surface p-4 rounded-md shadow-lg z-[9999] flex flex-col gap-2 min-w-[300px]">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-primary">info</span>
+            <span className="text-[12px] font-medium flex-1">{exportStatus}</span>
+            {exportProgress === null ? (
+              <button className="text-on-surface-variant hover:text-on-surface flex items-center" onClick={() => setExportStatus('')}>
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            ) : (
+              <button 
+                onClick={async () => {
+                  if (window.api) {
+                    await window.api.invoke('cancel-export');
+                  }
+                }}
+                className="text-error hover:text-error/85 hover:bg-error/10 px-2 py-0.5 rounded text-[10px] uppercase font-bold border border-error/20 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+          {exportProgress !== null && (
+            <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mt-1">
+              <div 
+                className="h-full bg-primary transition-all duration-300" 
+                style={{ width: `${exportProgress}%` }}
+              ></div>
+            </div>
+          )}
         </div>
       )}
     </div>
