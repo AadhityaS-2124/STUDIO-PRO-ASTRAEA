@@ -83,6 +83,9 @@ export default function App() {
 
   const state = useTimelineStore();
   const { mode, toggleTheme } = useThemeStore();
+  if (typeof window !== 'undefined') {
+    (window as any).timelineStore = useTimelineStore;
+  }
   
   const selectedClip = useMemo(() => {
     return state.clips.find(c => c.id === state.selectedClipId) ?? null;
@@ -90,13 +93,11 @@ export default function App() {
 
   useLayoutEffect(() => document.body.setAttribute('data-theme', mode), [mode]);
 
-  const seek = useCallback((time: number, forceStateUpdate = true) => {
+  const seek = useCallback((time: number) => {
     const duration = useTimelineStore.getState().duration;
     const bounded = Math.max(0, Math.min(time, duration));
     currentTimeRef.current = bounded;
-    if (forceStateUpdate) {
-      setCurrentTime(bounded);
-    }
+    setCurrentTime(bounded);
     timelineRef.current?.updatePlayhead(bounded);
     playerRef.current?.seekTo(bounded);
 
@@ -107,11 +108,11 @@ export default function App() {
   }, []);
 
   const handleTimeScrub = useCallback((time: number) => {
-    seek(time, false);
+    seek(time);
   }, [seek]);
 
   const handleTimeUpdate = useCallback((time: number) => {
-    seek(time, true);
+    seek(time);
   }, [seek]);
 
   useEffect(() => {
@@ -131,7 +132,7 @@ export default function App() {
         if (latest.isLooping) next = 0;
         else { next = latest.duration; latest.setIsPlaying(false); }
       }
-      seek(next, false);
+      seek(next);
       rafRef.current = requestAnimationFrame(frame);
     };
     rafRef.current = requestAnimationFrame(frame);

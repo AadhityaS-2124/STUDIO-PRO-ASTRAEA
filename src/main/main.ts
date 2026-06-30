@@ -69,12 +69,23 @@ function createWindow() {
   if (isDev) win.webContents.openDevTools();
 
   if (isDev) {
+    let reloadTimeout: NodeJS.Timeout | null = null;
     const watcher = fs.watch(path.join(__dirname, '../renderer'), { recursive: true }, (eventType: string, filename: string | null) => {
       if (filename && (filename.endsWith('.js') || filename.endsWith('.css') || filename.endsWith('.html'))) {
-        win.webContents.reloadIgnoringCache();
+        if (reloadTimeout) clearTimeout(reloadTimeout);
+        reloadTimeout = setTimeout(() => {
+          if (win.isDestroyed()) return;
+          const htmlPath = path.join(__dirname, '../renderer/index.html');
+          if (fs.existsSync(htmlPath) && fs.statSync(htmlPath).size > 0) {
+            win.webContents.reloadIgnoringCache();
+          }
+        }, 200);
       }
     });
-    win.on('closed', () => watcher.close());
+    win.on('closed', () => {
+      if (reloadTimeout) clearTimeout(reloadTimeout);
+      watcher.close();
+    });
   }
 
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
