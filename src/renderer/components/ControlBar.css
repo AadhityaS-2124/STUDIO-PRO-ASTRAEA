@@ -2,48 +2,137 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 20px;
-  background: #252525;
-  border-top: 1px solid #333;
-  border-bottom: 1px solid #333;
-  color: white;
+  padding: 12px 24px;
+  background: var(--bg-brushed-metal);
+  border-top: 2px solid #000;
+  border-bottom: 2px solid #000;
+  color: var(--text-primary);
+  height: 56px;
+  box-sizing: border-box;
   z-index: 2147483647;
   position: relative;
+  box-shadow: 0 -4px 10px rgba(0,0,0,0.5);
+}
+
+.time-display {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-lcd-glowing);
+  background: var(--bg-lcd-screen);
+  border: 2px solid #233e23;
+  border-radius: 4px;
+  padding: 4px 10px;
+  min-width: 170px;
+  text-align: center;
+  text-shadow: 0 0 8px var(--color-lcd-glowing);
+  box-shadow: var(--shadow-inset);
+  letter-spacing: 0.05em;
+}
+
+.lcd-divider {
+  color: rgba(57, 255, 20, 0.4);
 }
 
 .video-controls {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20px;
-  margin-top: 15px;
-  width: 100%;
+  gap: 12px;
 }
 
 .control-button {
-  background: #333;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 8px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--bg-brushed-metal-light);
+  border: var(--border-metal-bevel);
+  color: var(--text-primary);
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.2s;
+  box-shadow: var(--shadow-button-tactile);
+  transition: transform 0.1s, box-shadow 0.1s, background-color 0.1s;
+}
+
+.control-button:active {
+  transform: translateY(1px) scale(0.96);
+  box-shadow: var(--shadow-button-depressed);
 }
 
 .control-button:hover {
-  background: #444;
+  filter: brightness(1.15);
 }
 
-.control-button:disabled {
-  background: #555;
-  cursor: not-allowed;
-  opacity: 0.5;
+/* Tape deck theme transport colors */
+.play-pause-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #1e2535;
+  border: 2px solid #3b4b6b;
 }
 
-.time-display {
-  margin-top: 10px;
-  font-family: monospace;
-  font-size: 14px;
-  min-width: 100px;
-  text-align: center;
+.play-pause-btn.playing {
+  border-color: #2e7d32;
+  color: #a5d6a7;
+  text-shadow: 0 0 5px #a5d6a7;
+}
+
+.play-pause-btn.paused {
+  border-color: #f57c00;
+  color: #ffe0b2;
+}
+
+.stop-btn {
+  border-color: #c62828;
+  color: #ef9a9a;
+}
+
+.volume-fullscreen-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 170px;
+  justify-content: flex-end;
+}
+
+.volume-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.volume-icon {
+  color: var(--text-secondary);
+}
+
+/* Recessed mixer fader slider track */
+.volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 80px;
+  height: 8px;
+  background: var(--bg-lcd-screen);
+  border: 1px solid #3d4352;
+  border-radius: 4px;
+  box-shadow: var(--shadow-inset);
+  outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 20px;
+  background: linear-gradient(180deg, #5e6b84 0%, #3a4252 100%);
+  border: 1px solid #7e8fa8;
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.volume-slider::-webkit-slider-thumb:active {
+  background: linear-gradient(180deg, #3a4252 0%, #20242e 100%);
 }

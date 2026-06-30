@@ -12,8 +12,9 @@
   width: 640px;
   height: 360px;
   background: #000;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow: hidden;
+  box-shadow: var(--shadow-inset);
 }
 
 .video-player video {
@@ -31,7 +32,27 @@
   background: #000;
   max-width: 100%;
   max-height: 100%;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+  /* Skeuomorphic monitor bevel frame */
+  border: 12px solid #232731;
+  border-image: linear-gradient(135deg, #434c5e 0%, #1e222b 50%, #0d0f13 100%) 12;
+  border-radius: 8px;
+  box-shadow: 
+    inset 0 4px 10px rgba(0, 0, 0, 0.9), 
+    0 10px 25px rgba(0, 0, 0, 0.7),
+    0 0 0 2px #000;
+}
+
+/* Glossy screen glass reflection */
+.preview-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,0.15) 100%);
+  pointer-events: none;
+  z-index: 10;
 }
 
 .preview-container video {
@@ -53,7 +74,19 @@
   pointer-events: none;
 }
 
-.no-media { position: absolute; inset: 0; display: grid; place-items: center; color: #777; }
+.no-media { 
+  position: absolute; 
+  inset: 0; 
+  display: grid; 
+  place-items: center; 
+  color: #4c566a;
+  background: 
+    radial-gradient(circle, rgba(16, 20, 28, 0.9) 0%, rgba(8, 10, 14, 0.98) 100%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.2) 0px, rgba(0, 0, 0, 0.2) 1px, transparent 1px, transparent 2px);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
 
 .video-overlay {
   position: absolute;

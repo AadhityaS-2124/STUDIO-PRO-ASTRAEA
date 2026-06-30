@@ -38,32 +38,32 @@ const ControlBar = React.memo(function ControlBar({
     };
 
     return (
-        <div className="h-10 bg-surface-container-lowest flex items-center px-4 justify-between border-t border-outline-variant text-ui-label-md font-ui-label-md select-none shrink-0 w-full">
+        <div className="control-bar">
             {/* Time display */}
-            <div className="font-mono-code text-mono-code text-primary text-[11px] min-w-[150px]">
-                <span id="current-time-display-node">{formatTime(currentTime)}</span> <span className="text-on-secondary-container">/</span> {formatTime(totalDuration)}
+            <div className="time-display">
+                <span id="current-time-display-node">{formatTime(currentTime)}</span> <span className="lcd-divider">/</span> {formatTime(totalDuration)}
             </div>
 
             {/* Playback Controls */}
-            <div className="flex items-center justify-center gap-2">
+            <div className="video-controls">
                 <button
                     onClick={onStop}
                     title="Stop"
-                    className="w-7 h-7 rounded flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-surface-container transition-colors mr-2"
+                    className="control-button stop-btn"
                 >
                     <span className="material-symbols-outlined text-[18px]">stop</span>
                 </button>
                 <button
                     onClick={onSkipBackward}
                     title="Skip Backward"
-                    className="w-7 h-7 rounded flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors"
+                    className="control-button"
                 >
                     <span className="material-symbols-outlined text-[18px]">replay_10</span>
                 </button>
                 <button
                     onClick={onPlayPause}
                     title={isPlaying ? "Pause" : "Play"}
-                    className="w-8 h-8 mx-1 rounded-full bg-primary text-on-primary flex items-center justify-center hover:opacity-90 active:scale-95 shadow-[0_0_10px_rgba(192,193,255,0.3)] transition-all"
+                    className={`control-button play-pause-btn ${isPlaying ? 'playing' : 'paused'}`}
                 >
                     <span className="material-symbols-outlined text-[20px] font-bold">
                         {isPlaying ? 'pause' : 'play_arrow'}
@@ -72,16 +72,16 @@ const ControlBar = React.memo(function ControlBar({
                 <button
                     onClick={onSkipForward}
                     title="Skip Forward"
-                    className="w-7 h-7 rounded flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors"
+                    className="control-button"
                 >
                     <span className="material-symbols-outlined text-[18px]">forward_10</span>
                 </button>
             </div>
 
             {/* Volume and Fullscreen */}
-            <div className="flex items-center gap-4 min-w-[150px] justify-end">
-                <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
+            <div className="volume-fullscreen-container">
+                <div className="volume-container">
+                    <span className="material-symbols-outlined volume-icon">
                         {volume === 0 ? 'volume_off' : volume < 0.5 ? 'volume_down' : 'volume_up'}
                     </span>
                     <input
@@ -91,13 +91,13 @@ const ControlBar = React.memo(function ControlBar({
                         step="0.05"
                         value={volume}
                         onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                        className="w-16 h-1 bg-surface-container-highest rounded-full appearance-none cursor-pointer accent-primary"
+                        className="volume-slider"
                     />
                 </div>
                 <button
                     onClick={onFullscreen}
                     title="Fullscreen"
-                    className="w-7 h-7 rounded flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
+                    className="control-button"
                 >
                     <span className="material-symbols-outlined text-[18px]">fullscreen</span>
                 </button>
