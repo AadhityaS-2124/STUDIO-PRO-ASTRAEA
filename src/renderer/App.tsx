@@ -626,42 +626,47 @@ export default function App() {
       {/* WORKSPACE AREA */}
       <main className="flex flex-row h-[calc(100vh-40px-240px)] w-full overflow-hidden">
         {/* SIDE TOOLBAR */}
-        <aside className="w-10 bg-background border-r border-outline-variant flex flex-col items-center py-panel-padding gap-2 shrink-0">
-          <button className="w-8 h-8 flex items-center justify-center active-tool rounded-sm" title="Select Tool">
+        {/* SIDE TOOLBAR */}
+        <aside className="side-toolbar">
+          <button className="active-tool" title="Select Tool">
             <span className="material-symbols-outlined">near_me</span>
           </button>
           <button 
             onClick={() => { if (selectedClip) state.cutClip(selectedClip.id); }}
-            className={`w-8 h-8 flex items-center justify-center rounded-sm transition-colors ${selectedClip ? 'text-on-surface-variant hover:bg-surface-container hover:text-primary' : 'text-on-surface-variant/30 cursor-not-allowed'}`}
+            className={selectedClip ? 'text-on-surface-variant' : 'opacity-30 cursor-not-allowed'}
             title="Cut (Ctrl+X)"
+            disabled={!selectedClip}
           >
             <span className="material-symbols-outlined">content_cut</span>
           </button>
           <button 
             onClick={() => { if (selectedClip) state.copyClip(selectedClip.id); }}
-            className={`w-8 h-8 flex items-center justify-center rounded-sm transition-colors ${selectedClip ? 'text-on-surface-variant hover:bg-surface-container hover:text-primary' : 'text-on-surface-variant/30 cursor-not-allowed'}`}
+            className={selectedClip ? 'text-on-surface-variant' : 'opacity-30 cursor-not-allowed'}
             title="Copy (Ctrl+C)"
+            disabled={!selectedClip}
           >
             <span className="material-symbols-outlined">content_copy</span>
           </button>
           <button 
             onClick={() => state.pasteClip(currentTimeRef.current)}
-            className={`w-8 h-8 flex items-center justify-center rounded-sm transition-colors ${state.clipboardClip ? 'text-on-surface-variant hover:bg-surface-container hover:text-primary' : 'text-on-surface-variant/30 cursor-not-allowed'}`}
+            className={state.clipboardClip ? 'text-on-surface-variant' : 'opacity-30 cursor-not-allowed'}
             title="Paste (Ctrl+V)"
+            disabled={!state.clipboardClip}
           >
             <span className="material-symbols-outlined">content_paste</span>
           </button>
           <button 
             onClick={split}
-            className="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-primary rounded-sm transition-colors" 
+            className="text-on-surface-variant" 
             title="Split at Playhead (S)"
           >
             <span className="material-symbols-outlined">splitscreen</span>
           </button>
           <button 
             onClick={remove}
-            className={`w-8 h-8 flex items-center justify-center rounded-sm transition-colors ${selectedClip ? 'text-on-surface-variant hover:bg-surface-container hover:text-error' : 'text-on-surface-variant/30 cursor-not-allowed'}`}
+            className={selectedClip ? 'text-on-surface-variant' : 'opacity-30 cursor-not-allowed'}
             title="Delete (Del)"
+            disabled={!selectedClip}
           >
             <span className="material-symbols-outlined">delete</span>
           </button>
@@ -669,7 +674,6 @@ export default function App() {
           <div className="mt-auto flex flex-col gap-2">
             <button 
               onClick={toggleTheme}
-              className="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-sm"
               title="Toggle Theme"
             >
               <span className="material-symbols-outlined">settings</span>
@@ -680,13 +684,13 @@ export default function App() {
         {/* MAIN CONTENT AREA */}
         <div className="flex-1 flex overflow-hidden">
           {/* COLUMN 1: PROJECT PANEL / MEDIA POOL */}
-          <section className="w-72 nebula-panel flex flex-col border-r border-outline-variant overflow-hidden shrink-0">
-            <div className="h-8 bg-surface-container-lowest px-3 flex items-center justify-between border-b border-outline-variant shrink-0">
-              <span className="font-panel-header text-panel-header text-primary tracking-tight font-bold">PROJECT: MEDIA_POOL</span>
+          <section className="inspector">
+            <div className="inspector-header">
+              <span>MEDIA POOL</span>
               <span className="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-on-surface" onClick={() => void addMedia()}>add</span>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-2 bg-background/50 flex flex-col gap-1.5">
+            <div className="inspector-content">
               {/* Media clips rendering */}
               <div className="absolute top-2 left-2 text-[8px] opacity-30 pointer-events-none">
                 API Status: {window.api ? 'Loaded' : 'Missing (Check Terminal)'} | Agent: Electron
@@ -697,7 +701,6 @@ export default function App() {
                   <p className="text-[11px]">No media loaded</p>
                   <button 
                     onClick={() => void addMedia()}
-                    className="mt-1 px-3 py-1 bg-surface-container hover:bg-surface-container-highest border border-outline-variant text-[10px] rounded transition-all"
                   >
                     Import File
                   </button>
@@ -746,10 +749,11 @@ export default function App() {
               )}
             </div>
             
-            <div className="h-6 bg-surface-container-lowest px-2 border-t border-outline-variant flex items-center gap-2 text-[10px] text-on-surface-variant select-none">
-              <span className="material-symbols-outlined text-[14px]">grid_view</span>
-              <span className="material-symbols-outlined text-[14px] text-primary font-bold">list</span>
-              <div className="flex-1"></div>
+            <div className="inspector-header" style={{ height: '24px', fontSize: '9px', justifyContent: 'space-between' }}>
+              <div className="flex gap-2">
+                <span className="material-symbols-outlined text-[14px]">grid_view</span>
+                <span className="material-symbols-outlined text-[14px] text-primary font-bold">list</span>
+              </div>
               <span>{state.clips.length} Item(s)</span>
             </div>
           </section>
@@ -785,12 +789,12 @@ export default function App() {
           </section>
 
           {/* COLUMN 3: INSPECTOR PANEL */}
-          <section className="w-64 nebula-panel border-l border-outline-variant flex flex-col shrink-0 overflow-hidden">
-            <div className="h-8 bg-surface-container-lowest px-3 flex items-center border-b border-outline-variant shrink-0">
-              <span className="font-panel-header text-panel-header text-primary tracking-tight font-bold">INSPECTOR</span>
+          <section className="inspector">
+            <div className="inspector-header">
+              <span>INSPECTOR</span>
             </div>
             
-            <div className="flex-1 overflow-y-auto bg-background/30 text-ui-label-md p-3 flex flex-col gap-4">
+            <div className="inspector-content">
               {!selectedClip ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-on-surface-variant/50 gap-2">
                   <span className="material-symbols-outlined text-[24px]">info</span>
@@ -811,21 +815,19 @@ export default function App() {
 
                     {selectedClip.type === 'text' && (
                       <div className="flex flex-col gap-2">
-                        <label className="flex flex-col gap-1 text-on-surface-variant text-[10px] font-bold uppercase">
+                        <label>
                           Text Value
                           <input 
                             value={selectedClip.properties?.text ?? ''} 
                             onChange={e => updateProperties({ text: e.target.value })} 
-                            className="bg-surface-container-high border border-outline-variant text-on-surface px-2 py-1 rounded text-[11px] focus:outline-none focus:border-primary"
                           />
                         </label>
-                        <label className="flex flex-col gap-1 text-on-surface-variant text-[10px] font-bold uppercase">
+                        <label>
                           Text Color
                           <input 
                             type="color"
                             value={selectedClip.properties?.color ?? '#ffffff'} 
                             onChange={e => updateProperties({ color: e.target.value })} 
-                            className="bg-surface-container-high border border-outline-variant h-8 w-full p-0.5 rounded cursor-pointer"
                           />
                         </label>
                         <div className="flex flex-col gap-1.5">
@@ -839,7 +841,7 @@ export default function App() {
                             max="120" 
                             value={selectedClip.properties?.fontSize ?? 40} 
                             onChange={e => updateProperties({ fontSize: +e.target.value })} 
-                            className="w-full accent-primary bg-surface-container-highest rounded-full h-1 appearance-none cursor-pointer"
+                            className="inspector-slider"
                           />
                         </div>
                       </div>
@@ -860,7 +862,7 @@ export default function App() {
                             step="0.05" 
                             value={selectedClip.properties?.brightness ?? 0} 
                             onChange={e => updateProperties({ brightness: +e.target.value })} 
-                            className="w-full accent-primary bg-surface-container-highest rounded-full h-1 appearance-none cursor-pointer"
+                            className="inspector-slider"
                           />
                         </div>
 
@@ -877,7 +879,7 @@ export default function App() {
                             step="0.05" 
                             value={selectedClip.properties?.contrast ?? 1} 
                             onChange={e => updateProperties({ contrast: +e.target.value })} 
-                            className="w-full accent-primary bg-surface-container-highest rounded-full h-1 appearance-none cursor-pointer"
+                            className="inspector-slider"
                           />
                         </div>
 
@@ -894,7 +896,7 @@ export default function App() {
                             step="0.05" 
                             value={selectedClip.properties?.saturation ?? 1} 
                             onChange={e => updateProperties({ saturation: +e.target.value })} 
-                            className="w-full accent-primary bg-surface-container-highest rounded-full h-1 appearance-none cursor-pointer"
+                            className="inspector-slider"
                           />
                         </div>
 
@@ -910,7 +912,7 @@ export default function App() {
                             max="500" 
                             value={selectedClip.properties?.x ?? 0} 
                             onChange={e => updateProperties({ x: +e.target.value })} 
-                            className="w-full accent-primary bg-surface-container-highest rounded-full h-1 appearance-none cursor-pointer"
+                            className="inspector-slider"
                           />
                         </div>
 
@@ -926,13 +928,12 @@ export default function App() {
                             max="300" 
                             value={selectedClip.properties?.y ?? 0} 
                             onChange={e => updateProperties({ y: +e.target.value })} 
-                            className="w-full accent-primary bg-surface-container-highest rounded-full h-1 appearance-none cursor-pointer"
+                            className="inspector-slider"
                           />
                         </div>
 
                         <button 
                           onClick={() => updateProperties({ brightness: 0.06, contrast: 1.08, saturation: 1.12 })}
-                          className="w-full h-7 bg-surface-container-high border border-outline-variant hover:bg-surface-variant text-[10px] uppercase font-bold tracking-wider rounded transition-all"
                         >
                           ✨ Auto Enhance
                         </button>
@@ -952,7 +953,7 @@ export default function App() {
                         step="0.05" 
                         value={selectedClip.properties?.opacity ?? 1} 
                         onChange={e => updateProperties({ opacity: +e.target.value })} 
-                        className="w-full accent-primary bg-surface-container-highest rounded-full h-1 appearance-none cursor-pointer"
+                        className="inspector-slider"
                       />
                     </div>
                   </div>
@@ -961,12 +962,11 @@ export default function App() {
                   <div className="border-t border-outline-variant/30 pt-3 flex flex-col gap-3">
                     <p className="text-[10px] text-primary uppercase font-bold tracking-widest">Transitions</p>
                     
-                    <label className="flex flex-col gap-1 text-on-surface-variant text-[10px] font-bold uppercase">
+                    <label>
                       Transition Type
                       <select 
                         value={selectedClip.properties?.transition ?? 'none'} 
                         onChange={e => updateProperties({ transition: e.target.value as TransitionType })}
-                        className="bg-surface-container-high border border-outline-variant text-on-surface px-2 py-1 rounded text-[11px] focus:outline-none"
                       >
                         <option value="none">None</option>
                         <option value="fade">Fade</option>
@@ -974,7 +974,7 @@ export default function App() {
                       </select>
                     </label>
 
-                    <label className="flex flex-col gap-1 text-on-surface-variant text-[10px] font-bold uppercase">
+                    <label>
                       Duration (s)
                       <input 
                         type="number" 
@@ -983,7 +983,6 @@ export default function App() {
                         step="0.1" 
                         value={selectedClip.properties?.transitionDuration ?? 0.5} 
                         onChange={e => updateProperties({ transitionDuration: +e.target.value })}
-                        className="bg-surface-container-high border border-outline-variant text-on-surface px-2 py-1 rounded text-[11px] focus:outline-none"
                       />
                     </label>
                   </div>
@@ -993,7 +992,7 @@ export default function App() {
                     <p className="text-[10px] text-primary uppercase font-bold tracking-widest mb-1">Keyframes ({selectedClip.properties?.keyframes?.length ?? 0})</p>
                     <button 
                       onClick={() => state.addKeyframe(selectedClip.id, { time: Math.max(0, currentTimeRef.current - selectedClip.start), property: 'opacity', value: selectedClip.properties?.opacity ?? 1 })}
-                      className="w-full h-7 bg-surface-container-high border border-outline-variant hover:bg-surface-variant text-[10px] rounded transition-all text-left px-2 flex items-center justify-between"
+                      className="flex items-center justify-between px-3"
                     >
                       <span>Add Opacity Keyframe</span>
                       <span className="material-symbols-outlined text-[14px]">add</span>
@@ -1005,7 +1004,7 @@ export default function App() {
                           state.addKeyframe(selectedClip.id, { time, property: 'x', value: selectedClip.properties?.x ?? 0 });
                           state.addKeyframe(selectedClip.id, { time, property: 'y', value: selectedClip.properties?.y ?? 0 });
                         }}
-                        className="w-full h-7 bg-surface-container-high border border-outline-variant hover:bg-surface-variant text-[10px] rounded transition-all text-left px-2 flex items-center justify-between"
+                        className="flex items-center justify-between px-3"
                       >
                         <span>Add Motion Keyframe</span>
                         <span className="material-symbols-outlined text-[14px]">add</span>
@@ -1018,7 +1017,6 @@ export default function App() {
                     <button 
                       onClick={() => void createProxy()} 
                       disabled={!window.api || selectedClip.type === 'text'}
-                      className="w-full h-8 bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary disabled:opacity-50 disabled:pointer-events-none rounded text-[10px] font-bold uppercase transition-all"
                     >
                       Create 720p Proxy
                     </button>

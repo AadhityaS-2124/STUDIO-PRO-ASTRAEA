@@ -182,36 +182,56 @@ h1 {
 }
 
 .inspector {
-  padding: 16px;
-  overflow-y: auto;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
   background: var(--bg-brushed-metal);
   border-left: 2px solid #000;
   box-shadow: inset 3px 0 6px rgba(0,0,0,0.4);
 }
 
-.inspector h3 {
-  text-align: left;
+.inspector-header {
+  height: 32px;
+  background: var(--bg-brushed-metal-light);
+  border-bottom: 2px solid #000;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  border-bottom: 1px solid #3d4352;
-  padding-bottom: 8px;
-  margin-bottom: 16px;
+  color: var(--text-primary);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  flex-shrink: 0;
+}
+
+.inspector-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: transparent;
 }
 
 .inspector label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin: 16px 0;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
   color: var(--text-secondary);
+  letter-spacing: 0.05em;
 }
 
-.inspector input, .inspector select {
+.inspector input[type="text"], 
+.inspector input[type="number"],
+.inspector select {
   box-sizing: border-box;
   width: 100%;
   padding: 8px;
@@ -225,33 +245,123 @@ h1 {
   outline: none;
 }
 
+.inspector input[type="color"] {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  background: var(--bg-brushed-metal-light);
+  border: var(--border-metal-bevel);
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+}
+
 .inspector button {
   box-sizing: border-box;
   width: 100%;
   padding: 8px;
-  margin: 8px 0;
+  margin: 4px 0;
   background: var(--bg-brushed-metal-light);
   border: var(--border-metal-bevel);
   color: var(--text-primary);
   border-radius: 6px;
   cursor: pointer;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  box-shadow: var(--shadow-raised);
+  box-shadow: var(--shadow-button-tactile);
   transition: transform 0.1s, box-shadow 0.1s;
 }
 
 .inspector button:active {
   transform: translateY(1px);
+  box-shadow: var(--shadow-button-depressed);
+}
+
+.inspector-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  background: var(--bg-lcd-screen);
+  border: 1px solid #3d4352;
+  border-radius: 4px;
   box-shadow: var(--shadow-inset);
+  outline: none;
+  margin: 6px 0;
+}
+
+.inspector-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 20px;
+  background: linear-gradient(180deg, #5e6b84 0%, #3a4252 100%);
+  border: 1px solid #7e8fa8;
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.inspector-slider::-webkit-slider-thumb:active {
+  background: linear-gradient(180deg, #3a4252 0%, #20242e 100%);
 }
 
 .inspector small {
   display: block;
   margin-top: 8px;
   color: #7f8c8d;
+}
+
+.side-toolbar {
+  width: 40px;
+  background: var(--bg-brushed-metal);
+  border-right: 2px solid #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 8px;
+  flex-shrink: 0;
+  box-shadow: inset -2px 0 5px rgba(0,0,0,0.4);
+}
+
+.side-toolbar button {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-brushed-metal-light);
+  border: var(--border-metal-bevel);
+  color: var(--text-primary);
+  border-radius: 4px;
+  box-shadow: var(--shadow-button-tactile);
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.side-toolbar button:active {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-button-depressed);
+}
+
+.side-toolbar button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.side-toolbar button:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.side-toolbar button.active-tool {
+  background: #ff9800 !important;
+  color: #000 !important;
+  box-shadow: var(--shadow-button-depressed) !important;
+  border-color: #ff9800;
 }
 
 .header-controls button:nth-child(2) {
