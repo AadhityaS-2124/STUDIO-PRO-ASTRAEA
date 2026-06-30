@@ -4,6 +4,7 @@ const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const { fileURLToPath, pathToFileURL } = require('url');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+const { Readable } = require('stream');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { secure: true, supportFetchAPI: true, bypassCSP: true, corsEnabled: true, stream: true } }
@@ -39,11 +40,26 @@ function createWindow() {
     }
   });
   mainWindow = win;
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    console.log('[Electron] ready-to-show event fired');
+    win.show();
+  });
+  
+  win.webContents.on('did-start-navigation', (event: any, url: string) => {
+    console.log('[Electron] did-start-navigation:', url);
+  });
+  win.webContents.on('did-finish-load', () => {
+    console.log('[Electron] did-finish-load');
+  });
+  win.webContents.on('did-fail-load', (event: any, errorCode: number, errorDescription: string, validatedURL: string) => {
+    console.error('[Electron] did-fail-load:', errorCode, errorDescription, validatedURL);
+  });
+
   const target = pathToFileURL(path.join(__dirname, '../renderer/index.html')).toString();
   const loadTarget = () => {
     if (win.isDestroyed()) return;
-    win.loadURL(target).catch(() => {
+    win.loadURL(target).catch((err) => {
+      console.error('[Electron] loadURL catch error:', err);
       if (isDev && !win.isDestroyed()) {
         setTimeout(loadTarget, 500);
       }
@@ -247,6 +263,7 @@ const getMimeType = (filePath: string) => {
 };
 
 app.whenReady().then(async () => {
+
   // Use protocol.handle (modern Net-based protocol registration)
   protocol.handle('media', async (request: Request) => {
     let raw = request.url.slice('media://'.length);
@@ -254,6 +271,7 @@ app.whenReady().then(async () => {
       if (/^\/[a-zA-Z]:/.test(raw)) raw = raw.slice(1);
     }
     const filePath = decodeURIComponent(raw);
+    console.log('[MediaProtocol] request.url:', request.url, '=> filePath:', filePath);
 
     try {
       const stats = await fs.promises.stat(filePath);
@@ -269,7 +287,7 @@ app.whenReady().then(async () => {
 
         // Create stream for range
         const stream = fs.createReadStream(filePath, { start, end });
-        return new Response(stream as any, {
+        return new Response(Readable.toWeb(stream) as any, {
           status: 206,
           statusText: 'Partial Content',
           headers: {
@@ -281,7 +299,7 @@ app.whenReady().then(async () => {
         });
       } else {
         const stream = fs.createReadStream(filePath);
-        return new Response(stream as any, {
+        return new Response(Readable.toWeb(stream) as any, {
           status: 200,
           headers: {
             'Content-Length': String(stats.size),
